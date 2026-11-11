@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import * as XLSX from 'xlsx';
 import { 
   Wallet, CreditCard, TrendingUp, Calendar, Plus, Shield, Check, Clock,
   PieChart, Tag, ArrowUpRight, ArrowDownRight, Car, Home, ShoppingBag, 
   Utensils, Briefcase, Gift, Zap, X, Eye, EyeOff, LayoutDashboard, Download, 
-  Layers, Calculator, BarChart3, Pencil, Trash2, Layers3, Flame, Filter
+  Layers, Calculator, BarChart3, Pencil, Trash2, Layers3, Flame, Filter,
+  Upload, FileSpreadsheet, FileJson
 } from 'lucide-react';
 
 // --- CONFIGURAZIONE FIREBASE ---
@@ -102,7 +104,7 @@ const budgetRules = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [investSubTab, setInvestSubTab] = useState('all'); // Sub-views per Investimenti: 'all', 'allocation', 'performance', 'table'
+  const [investSubTab, setInvestSubTab] = useState('all');
   
   const [user, setUser] = useState(null);
   const [data, setData] = useState(() => {
@@ -111,8 +113,12 @@ export default function App() {
   });
   const [showValues, setShowValues] = useState(true);
 
+  const jsonInputRef = useRef(null);
+  const excelInputRef = useRef(null);
+
   // Modali State
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingTx, setEditingTx] = useState(null);
   const [newTx, setNewTx] = useState({ 
     title: '', 
     amount: '', 
@@ -164,7 +170,7 @@ export default function App() {
     }
   };
 
-  // --- CALCOLI TOTALI PATRIMONIO ---
+  // --- TOTALI PATRIMONIO ---
   const totalBankBalance = useMemo(() => data.accounts.reduce((sum, a) => sum + Number(a.balance), 0), [data.accounts]);
   const totalInvestedCarico = useMemo(() => data.investments.reduce((sum, i) => sum + Number(i.invested), 0), [data.investments]);
   const totalInvestedCurrent = useMemo(() => data.investments.reduce((sum, i) => sum + Number(i.currentValue), 0), [data.investments]);
@@ -173,7 +179,7 @@ export default function App() {
   const totalGainAbs = totalInvestedCurrent - totalInvestedCarico;
   const totalROI = totalInvestedCarico > 0 ? (totalGainAbs / totalInvestedCarico) * 100 : 0;
 
-  // --- CALCOLI DASHBOARD: SPESE DEL MESE & GRAFICO % ---
+  // --- DASHBOARD SPESE ---
   const monthlyExpensesData = useMemo(() => {
     const currentMonthPrefix = new Date().toISOString().slice(0, 7);
     const expenses = data.transactions.filter(tx => tx.type === 'expense');
@@ -197,7 +203,7 @@ export default function App() {
     return { totalSpent, categoriesList };
   }, [data.transactions]);
 
-  // --- CALCOLI INVESTIMENTI ---
+  // --- INVESTIMENTI ---
   const investmentCategories = useMemo(() => {
     const groups = {};
     data.investments.forEach(inv => {
@@ -222,7 +228,7 @@ export default function App() {
     })).sort((a,b) => b.amount - a.amount);
   }, [data.investments, totalInvestedCurrent]);
 
-  // --- CALCOLI SCADENZIARIO & LUCE GAS ---
+  // --- SCADENZIARIO UTENZE ---
   const billsAnalytics = useMemo(() => {
     const categories = {};
     let luceGasTotal = 0;
@@ -258,19 +264,87 @@ export default function App() {
     return { categoryList, luceGasTotal, luceGasCount, totalAllBills };
   }, [data.bills]);
 
-  // --- HANDLER TRANSAZIONI (CON SELEZIONE CATEGORIA CORRETTA) ---
-  const handleAddTx = (e) => {
-    e.preventDefault();
-    if (!newTx.title || !newTx.amount) return;
-    const amt = parseFloat(newTx.amount);
-    const updatedAccs = data.accounts.map(acc => acc.id === newTx.accountId ? { ...acc, balance: acc.balance + (newTx.type === 'income' ? amt : -amt) } : acc);
-    const updatedTx = [{ ...newTx, id: Date.now().toString(), amount: amt }, ...data.transactions];
-    updateData({ ...data, accounts: updatedAccs, transactions: updatedTx });
-    setShowAddModal(false);
-    setNewTx({ title: '', amount: '', type: 'expense', category: 'Alimentari', accountId: data.accounts[0]?.id || '1', date: new Date().toISOString().split('T')[0] });
+  // --- HANDLER TRANSAZIONI ---
+  const handleOpenAddTx = () => {
+    setEditingTx(null);
+    setNewTx({ 
+      title: '', 
+      amount: '', 
+      type: 'expense', 
+      category: 'Alimentari', 
+      accountId: data.accounts[0]?.id || '1', 
+      date: new Date().toISOString().split('T')[0] 
+    });
+    setShowAddModal(true);
   };
 
-  // --- HANDLER CRUD CONTI ---
+  const handleOpenEditTx = (tx) => {
+    setEditingTx(tx);
+    setNewTx({ 
+      title: tx.title, 
+      amount: tx.amount.toString(), 
+      type: tx.type, 
+      category: tx.category, 
+      accountId: tx.accountId || data.accounts[0]?.id || '1', 
+      date: tx.date 
+    });
+    setShowAddModal(true);
+  };
+
+  const handleSaveTx = (e) => {
+    e.preventDefault();
+    if (!newTx.title || !newTx.amount) return;
+    const newAmt = parseFloat(newTx.amount);
+
+    if (editingTx) {
+      const oldAmt = editingTx.amount;
+      const oldType = editingTx.type;
+      const oldAccId = editingTx.accountId;
+      const targetAccId = newTx.accountId;
+
+      const updatedAccounts = data.accounts.map(acc => {
+        let bal = acc.balance;
+        if (acc.id === oldAccId) {
+          bal += (oldType === 'income' ? -oldAmt : oldAmt);
+        }
+        if (acc.id === targetAccId) {
+          bal += (newTx.type === 'income' ? newAmt : -newAmt);
+        }
+        return { ...acc, balance: bal };
+      });
+
+      const updatedTxList = data.transactions.map(t => 
+        t.id === editingTx.id ? { ...newTx, id: editingTx.id, amount: newAmt } : t
+      );
+
+      updateData({ ...data, accounts: updatedAccounts, transactions: updatedTxList });
+    } else {
+      const updatedAccounts = data.accounts.map(acc => 
+        acc.id === newTx.accountId 
+          ? { ...acc, balance: acc.balance + (newTx.type === 'income' ? newAmt : -newAmt) } 
+          : acc
+      );
+      const updatedTxList = [{ ...newTx, id: Date.now().toString(), amount: newAmt }, ...data.transactions];
+      updateData({ ...data, accounts: updatedAccounts, transactions: updatedTxList });
+    }
+
+    setShowAddModal(false);
+  };
+
+  const handleDeleteTx = (tx) => {
+    if (window.confirm(`Eliminare il movimento "${tx.title}" di € ${tx.amount}?`)) {
+      const amt = Number(tx.amount);
+      const updatedAccounts = data.accounts.map(acc => 
+        acc.id === tx.accountId 
+          ? { ...acc, balance: acc.balance + (tx.type === 'income' ? -amt : amt) } 
+          : acc
+      );
+      const updatedTxList = data.transactions.filter(t => t.id !== tx.id);
+      updateData({ ...data, accounts: updatedAccounts, transactions: updatedTxList });
+    }
+  };
+
+  // --- HANDLER CONTI ---
   const handleOpenAddAccount = () => {
     setEditingAccount(null);
     setAccountForm({ name: '', type: 'banca', balance: '', iban: '' });
@@ -310,7 +384,7 @@ export default function App() {
     }
   };
 
-  // --- HANDLER CRUD INVESTIMENTI ---
+  // --- HANDLER INVESTIMENTI ---
   const handleOpenAddInvestment = () => {
     setEditingInvestment(null);
     setInvestmentForm({ name: '', category: 'ETF Azionari', invested: '', currentValue: '' });
@@ -347,7 +421,7 @@ export default function App() {
     }
   };
 
-  // --- HANDLER CRUD SCADENZIARIO & BOLLETTE ---
+  // --- HANDLER SCADENZIARIO & BOLLETTE ---
   const handleOpenAddBill = () => {
     setEditingBill(null);
     setBillForm({ title: '', amount: '', dueDate: new Date().toISOString().split('T')[0], category: 'Luce & Gas', status: 'pending' });
@@ -386,6 +460,159 @@ export default function App() {
   const handleToggleBillStatus = (id) => {
     const updatedBills = data.bills.map(b => b.id === id ? { ...b, status: b.status === 'paid' ? 'pending' : 'paid' } : b);
     updateData({ ...data, bills: updatedBills });
+  };
+
+  // --- HANDLERS BACKUP: JSON & EXCEL ---
+  const handleExportJSON = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `backup_finanza_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+  };
+
+  const handleImportJSON = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.accounts)) {
+          updateData(parsed);
+          alert("Backup JSON importato con successo!");
+        } else {
+          alert("File JSON non valido per questa applicazione.");
+        }
+      } catch (err) {
+        alert("Errore nella lettura del file JSON.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Foglio Movimenti
+    const txData = data.transactions.map(t => ({
+      ID: t.id,
+      Data: t.date,
+      Titolo: t.title,
+      Importo: t.amount,
+      Tipo: t.type,
+      Categoria: t.category,
+      ID_Conto: t.accountId
+    }));
+    const wsTx = XLSX.utils.json_to_sheet(txData);
+    XLSX.utils.book_append_sheet(wb, wsTx, "Movimenti");
+
+    // Foglio Conti
+    const accData = data.accounts.map(a => ({
+      ID: a.id,
+      Nome: a.name,
+      Tipo: a.type,
+      Saldo: a.balance,
+      IBAN: a.iban || ''
+    }));
+    const wsAcc = XLSX.utils.json_to_sheet(accData);
+    XLSX.utils.book_append_sheet(wb, wsAcc, "Conti");
+
+    // Foglio Investimenti
+    const invData = data.investments.map(i => ({
+      ID: i.id,
+      Nome: i.name,
+      Categoria: i.category,
+      Capitale_Investito: i.invested,
+      Valore_Attuale: i.currentValue
+    }));
+    const wsInv = XLSX.utils.json_to_sheet(invData);
+    XLSX.utils.book_append_sheet(wb, wsInv, "Investimenti");
+
+    // Foglio Scadenze
+    const billData = data.bills.map(b => ({
+      ID: b.id,
+      Titolo: b.title,
+      Importo: b.amount,
+      Data_Scadenza: b.dueDate,
+      Categoria: b.category,
+      Stato: b.status
+    }));
+    const wsBill = XLSX.utils.json_to_sheet(billData);
+    XLSX.utils.book_append_sheet(wb, wsBill, "Scadenze");
+
+    XLSX.writeFile(wb, `finanza_famiglia_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleImportExcel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const dataBuffer = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(dataBuffer, { type: 'array' });
+
+        const importedData = { ...data };
+
+        if (workbook.SheetNames.includes("Movimenti")) {
+          const rawTx = XLSX.utils.sheet_to_json(workbook.Sheets["Movimenti"]);
+          importedData.transactions = rawTx.map(t => ({
+            id: String(t.ID || Date.now()),
+            date: String(t.Data || new Date().toISOString().split('T')[0]),
+            title: String(t.Titolo || ''),
+            amount: Number(t.Importo || 0),
+            type: String(t.Tipo || 'expense'),
+            category: String(t.Categoria || 'Altro'),
+            accountId: String(t.ID_Conto || '1')
+          }));
+        }
+
+        if (workbook.SheetNames.includes("Conti")) {
+          const rawAcc = XLSX.utils.sheet_to_json(workbook.Sheets["Conti"]);
+          importedData.accounts = rawAcc.map(a => ({
+            id: String(a.ID || Date.now()),
+            name: String(a.Nome || ''),
+            type: String(a.Tipo || 'banca'),
+            balance: Number(a.Saldo || 0),
+            iban: String(a.IBAN || '')
+          }));
+        }
+
+        if (workbook.SheetNames.includes("Investimenti")) {
+          const rawInv = XLSX.utils.sheet_to_json(workbook.Sheets["Investimenti"]);
+          importedData.investments = rawInv.map(i => ({
+            id: String(i.ID || Date.now()),
+            name: String(i.Nome || ''),
+            category: String(i.Categoria || 'Altro'),
+            invested: Number(i.Capitale_Investito || 0),
+            currentValue: Number(i.Valore_Attuale || i.Capitale_Investito || 0)
+          }));
+        }
+
+        if (workbook.SheetNames.includes("Scadenze")) {
+          const rawBills = XLSX.utils.sheet_to_json(workbook.Sheets["Scadenze"]);
+          importedData.bills = rawBills.map(b => ({
+            id: String(b.ID || Date.now()),
+            title: String(b.Titolo || ''),
+            amount: Number(b.Importo || 0),
+            dueDate: String(b.Data_Scadenza || ''),
+            category: String(b.Categoria || 'Altro'),
+            status: String(b.Stato || 'pending')
+          }));
+        }
+
+        updateData(importedData);
+        alert("Dati aggiornati con successo dal file Excel!");
+      } catch (err) {
+        alert("Errore nell'elaborazione del file Excel. Verifica la struttura dei fogli.");
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
   };
 
   const formatEuro = (v) => showValues ? `€ ${v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '••••••';
@@ -435,7 +662,7 @@ export default function App() {
         </nav>
 
         <button 
-          onClick={() => setShowAddModal(true)}
+          onClick={handleOpenAddTx}
           className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-xs text-white shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2"
         >
           <Plus className="w-4 h-4" /> Nuovo Movimento
@@ -475,7 +702,6 @@ export default function App() {
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             
-            {/* ANALISI SPESE DEL MESE & GRAFICO PERCENTUALE */}
             <div className="bg-slate-900/60 p-6 rounded-3xl border border-slate-800 space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -485,7 +711,6 @@ export default function App() {
               </div>
 
               <div className="flex flex-col sm:flex-row items-center gap-6 py-2">
-                {/* SVG DONUT CHART SPESE */}
                 <div className="relative w-44 h-44 shrink-0 flex items-center justify-center">
                   <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
                     <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#1E293B" strokeWidth="4.5" />
@@ -513,7 +738,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* LEGENDA SPESE */}
                 <div className="space-y-3 w-full">
                   {monthlyExpensesData.categoriesList.map((cat, idx) => (
                     <div key={idx} className="space-y-1">
@@ -536,7 +760,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* SEZIONE MOVIMENTI E CONTI */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-4 bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
                 <div className="flex justify-between items-center">
@@ -644,11 +867,9 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. INVESTIMENTI & GRAFICI TAB (CON SOTTO-VISTE ISOLATE PER I GRAFICI) */}
+        {/* 3. INVESTIMENTI & GRAFICI TAB */}
         {activeTab === 'investments' && (
           <div className="space-y-6">
-            
-            {/* INTESTAZIONE E SOTTO-NAVIGAZIONE */}
             <div className="flex justify-between items-center flex-wrap gap-4 border-b border-slate-800 pb-4">
               <div>
                 <h2 className="text-lg font-bold text-white">Analisi Investimenti & Portafoglio</h2>
@@ -668,7 +889,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* BARRA SOTTO-NAVIGAZIONE GRAFICI */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
               {[
                 { id: 'all', label: 'Tutte le Viste' },
@@ -690,7 +910,6 @@ export default function App() {
               ))}
             </div>
 
-            {/* SEZIONI GRAFICI SEPARATE E ISOLATE */}
             {(investSubTab === 'all' || investSubTab === 'allocation') && (
               <div className="bg-slate-900/60 p-6 rounded-3xl border border-slate-800 space-y-4">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -1042,31 +1261,59 @@ export default function App() {
         {/* 6. MOVIMENTI TAB */}
         {activeTab === 'transactions' && (
           <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-bold text-white">Tutti i Movimenti</h2>
-              <button onClick={() => setShowAddModal(true)} className="px-3 py-1.5 rounded-xl bg-emerald-600 text-xs font-bold text-white flex items-center gap-1">
-                <Plus className="w-3.5 h-3.5" /> Aggiungi
+            <div className="flex justify-between items-center flex-wrap gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-white">Registro Movimenti</h2>
+                <p className="text-xs text-slate-400">Aggiungi, modifica o elimina le entrate e le uscite sul tuo conto.</p>
+              </div>
+              <button onClick={handleOpenAddTx} className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 flex items-center gap-2">
+                <Plus className="w-4 h-4" /> Aggiungi Movimento
               </button>
             </div>
-            <div className="space-y-2">
+
+            <div className="space-y-2.5 pt-2">
               {data.transactions.map(tx => {
                 const cat = categoryConfig[tx.category] || categoryConfig['Altro'];
                 const Icon = cat.icon;
                 const isInc = tx.type === 'income';
+                const acc = data.accounts.find(a => a.id === tx.accountId);
+
                 return (
-                  <div key={tx.id} className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                  <div key={tx.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${cat.bg} ${cat.text}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${cat.bg} ${cat.text}`}>
                         <Icon className="w-5 h-5" />
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-white">{tx.title}</p>
-                        <p className="text-xs text-slate-500">{tx.date} • {tx.category}</p>
+                        <p className="text-sm font-bold text-white">{tx.title}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {tx.date} • <span className="text-slate-400 font-medium">{tx.category}</span> {acc ? `• (${acc.name})` : ''}
+                        </p>
                       </div>
                     </div>
-                    <span className={`text-sm font-bold ${isInc ? 'text-emerald-400' : 'text-slate-200'}`}>
-                      {isInc ? '+' : '-'}{formatEuro(tx.amount)}
-                    </span>
+
+                    <div className="flex items-center gap-3">
+                      <span className={`text-base font-extrabold ${isInc ? 'text-emerald-400' : 'text-slate-200'}`}>
+                        {isInc ? '+' : '-'}{formatEuro(tx.amount)}
+                      </span>
+
+                      <div className="flex items-center gap-1">
+                        <button 
+                          onClick={() => handleOpenEditTx(tx)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                          title="Modifica Movimento"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteTx(tx)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                          title="Elimina Movimento"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -1074,22 +1321,79 @@ export default function App() {
           </div>
         )}
 
-        {/* 7. BACKUP TAB */}
+        {/* 7. BACKUP & CLOUD TAB (IMPORT/EXPORT JSON & EXCEL) */}
         {activeTab === 'backup' && (
-          <div className="space-y-4 max-w-lg mx-auto py-6 text-center">
-            <Shield className="w-12 h-12 text-blue-500 mx-auto" />
-            <h2 className="text-lg font-bold text-white">Sincronizzazione Cloud e Backup</h2>
-            <p className="text-xs text-slate-400">I dati sono sincronizzati con Firebase e conservati in locale.</p>
-            <div className="pt-4 flex justify-center gap-3">
-              <button onClick={() => {
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `backup_finanza_${new Date().toISOString().split('T')[0]}.json`;
-                a.click();
-              }} className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-lg flex items-center gap-2">
-                <Download className="w-4 h-4" /> Esporta Backup JSON
-              </button>
+          <div className="space-y-6 max-w-2xl mx-auto py-4">
+            <div className="text-center space-y-2">
+              <Shield className="w-12 h-12 text-blue-500 mx-auto" />
+              <h2 className="text-xl font-bold text-white">Sincronizzazione, Backup e Importazione PC</h2>
+              <p className="text-xs text-slate-400">Esporta i dati per lavorarli su PC con Excel o crea backup di ripristino JSON.</p>
+            </div>
+
+            {/* NASCOSTI INPUT FILE PER IMPORT */}
+            <input type="file" accept=".json" ref={jsonInputRef} onChange={handleImportJSON} className="hidden" />
+            <input type="file" accept=".xlsx, .xls" ref={excelInputRef} onChange={handleImportExcel} className="hidden" />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              
+              {/* SEZIONE EXCEL */}
+              <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                    <FileSpreadsheet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Gestione Excel (.xlsx)</h3>
+                    <p className="text-[11px] text-slate-400">Modifica massiva da computer</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <button 
+                    onClick={handleExportExcel}
+                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+                  >
+                    <Download className="w-4 h-4" /> Esporta in Excel
+                  </button>
+
+                  <button 
+                    onClick={() => excelInputRef.current?.click()}
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-2 border border-slate-700"
+                  >
+                    <Upload className="w-4 h-4" /> Importa da Excel
+                  </button>
+                </div>
+              </div>
+
+              {/* SEZIONE JSON */}
+              <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
+                    <FileJson className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Backup JSON Completo</h3>
+                    <p className="text-[11px] text-slate-400">Salvataggio dati grezzi</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <button 
+                    onClick={handleExportJSON}
+                    className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
+                  >
+                    <Download className="w-4 h-4" /> Esporta Backup JSON
+                  </button>
+
+                  <button 
+                    onClick={() => jsonInputRef.current?.click()}
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-2 border border-slate-700"
+                  >
+                    <Upload className="w-4 h-4" /> Importa File JSON
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         )}
@@ -1114,16 +1418,18 @@ export default function App() {
         })}
       </nav>
 
-      {/* MODALE NUOVO MOVIMENTO CON SELEZIONE CATEGORIA */}
+      {/* MODALE NUOVO / MODIFICA MOVIMENTO */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="font-bold text-white text-base">Nuova Transazione</h3>
+              <h3 className="font-bold text-white text-base">
+                {editingTx ? 'Modifica Transazione' : 'Nuova Transazione'}
+              </h3>
               <button onClick={() => setShowAddModal(false)}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
 
-            <form onSubmit={handleAddTx} className="space-y-3">
+            <form onSubmit={handleSaveTx} className="space-y-3">
               <div>
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Titolo / Descrizione</label>
                 <input 
@@ -1166,6 +1472,15 @@ export default function App() {
               </div>
 
               <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Data Regolamento</label>
+                <input 
+                  type="date" 
+                  value={newTx.date} onChange={e => setNewTx({...newTx, date: e.target.value})}
+                  className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500" required 
+                />
+              </div>
+
+              <div>
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Conto di Addebito / Accredito</label>
                 <select 
                   value={newTx.accountId} onChange={e => setNewTx({...newTx, accountId: e.target.value})} 
@@ -1176,7 +1491,7 @@ export default function App() {
               </div>
 
               <button type="submit" className="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-xs text-white shadow-lg shadow-blue-600/30">
-                Salva Movimento
+                {editingTx ? 'Salva Modifiche' : 'Salva Movimento'}
               </button>
             </form>
           </div>
