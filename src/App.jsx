@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getFirestore, doc, setDoc, onSnapshot, enableIndexedDbPersistence 
+  getFirestore, doc, setDoc, onSnapshot 
 } from 'firebase/firestore';
 import { 
   getAuth, signInAnonymously, onAuthStateChanged 
 } from 'firebase/auth';
 import { 
   Wallet, CreditCard, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, 
-  Plus, Download, Upload, AlertTriangle, CheckCircle2, Clock, 
-  PieChart, Shield, Tag, Trash2, DollarSign, Layers, Sparkles, RefreshCw,
-  Eye, EyeOff, ChevronRight, Activity, Zap
+  Plus, Download, Upload, Shield, Tag, Sparkles, Eye, EyeOff,
+  ChevronLeft, ChevronRight, PieChart, Layers, Check, X,
+  Search, Filter, ShoppingBag, Home, Car, GraduationCap, Gift, DollarSign,
+  Zap, Heart, Paperclip, CheckCircle2, Clock
 } from 'lucide-react';
 
 // --- CONFIGURAZIONE FIREBASE ---
@@ -32,33 +33,47 @@ if (isFirebaseConfigured) {
   auth = getAuth(app);
 }
 
+// Categorie con Colori ed Icone personalizzate (Stile Screenshot Reference)
+const CATEGORY_CONFIG = {
+  'Alimentari': { color: '#8E24AA', bg: 'bg-purple-100 text-purple-600', icon: ShoppingBag },
+  'Trasporti': { color: '#E91E63', bg: 'bg-pink-100 text-pink-600', icon: Car },
+  'Affitto': { color: '#FB8C00', bg: 'bg-amber-100 text-amber-600', icon: Home },
+  'Casa': { color: '#FB8C00', bg: 'bg-amber-100 text-amber-600', icon: Home },
+  'Istruzione': { color: '#4CAF50', bg: 'bg-emerald-100 text-emerald-600', icon: GraduationCap },
+  'Regali': { color: '#9C27B0', bg: 'bg-purple-100 text-purple-600', icon: Gift },
+  'Lavoro': { color: '#2E7D32', bg: 'bg-green-100 text-green-700', icon: DollarSign },
+  'Utenze': { color: '#0288D1', bg: 'bg-sky-100 text-sky-600', icon: Zap },
+  'Altro': { color: '#78909C', bg: 'bg-slate-100 text-slate-600', icon: Tag }
+};
+
 // Dati Iniziali Demo
 const initialData = {
   accounts: [
-    { id: '1', name: 'Conto Corrente Principale', type: 'bank', balance: 4250.00, iban: 'IT60X0542811101000000123456' },
-    { id: '2', name: 'Carta Prepagata', type: 'card', balance: 350.50, iban: 'IT99Y0300000000000009876543' },
-    { id: '3', name: 'Fondo di Emergenza', type: 'savings', balance: 12000.00, iban: 'BBVA Deposito' },
+    { id: '1', name: 'Wallet / Contabile', type: 'bank', balance: 4250.00, projected: 4250.00 },
+    { id: '2', name: 'Carta Prepagata', type: 'card', balance: 350.50, projected: 350.50 },
+    { id: '3', name: 'Fondo Deposito', type: 'savings', balance: 12000.00, projected: 12000.00 },
   ],
   bills: [
     { id: '1', title: 'Energia Elettrica & Gas', amount: 145.20, dueDate: '2026-11-20', category: 'Utenze', status: 'pending' },
     { id: '2', title: 'Internet Fibra', amount: 29.90, dueDate: '2026-11-25', category: 'Utenze', status: 'pending' },
-    { id: '3', title: 'Rata Mutuo / Affitto', amount: 750.00, dueDate: '2026-12-01', category: 'Casa', status: 'pending' },
-    { id: '4', title: 'Assicurazione Auto', amount: 480.00, dueDate: '2026-11-05', category: 'Trasporti', status: 'paid' },
+    { id: '3', title: 'Rata Mutuo / Affitto', amount: 750.00, dueDate: '2026-12-01', category: 'Affitto', status: 'pending' },
   ],
   investments: [
     { id: '1', name: 'Vanguard FTSE All-World (VWCE)', category: 'ETF', invested: 10000.00, currentValue: 11850.00, shares: 112 },
     { id: '2', name: 'iShares Core S&P 500 (CSSPX)', category: 'ETF', invested: 5000.00, currentValue: 5620.00, shares: 11 },
-    { id: '3', name: 'BTP Valore 2028', category: 'Titoli di Stato', invested: 4000.00, currentValue: 4080.00, shares: 4000 },
   ],
   transactions: [
-    { id: '1', date: '2026-11-10', title: 'Stipendio', amount: 2650.00, type: 'income', category: 'Lavoro', accountId: '1' },
-    { id: '2', date: '2026-11-09', title: 'Spesa Supermercato', amount: 84.30, type: 'expense', category: 'Alimentari', accountId: '2' },
-    { id: '3', date: '2026-11-07', title: 'Rifornimento Carburante', amount: 65.00, type: 'expense', category: 'Trasporti', accountId: '2' },
+    { id: '1', date: '2026-11-11', title: 'Stipendio', amount: 2650.00, type: 'income', category: 'Lavoro', accountId: '1' },
+    { id: '2', date: '2026-11-11', title: 'Trasporti', amount: 30.00, type: 'expense', category: 'Trasporti', accountId: '1' },
+    { id: '3', date: '2026-11-11', title: 'Affitto Casa', amount: 25.00, type: 'expense', category: 'Affitto', accountId: '1' },
+    { id: '4', date: '2026-11-10', title: 'Corsi Formazione', amount: 20.00, type: 'expense', category: 'Istruzione', accountId: '1' },
+    { id: '5', date: '2026-11-10', title: 'Abbigliamento', amount: 50.00, type: 'expense', category: 'Alimentari', accountId: '1' },
+    { id: '6', date: '2026-11-09', title: 'Regalo Compleanno', amount: 100.00, type: 'expense', category: 'Regali', accountId: '1' },
   ]
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('transactions'); // 'transactions', 'analytics', 'accounts', 'bills', 'backup'
   const [user, setUser] = useState(null);
   const [data, setData] = useState(() => {
     const local = localStorage.getItem('finanza_app_data');
@@ -66,18 +81,19 @@ export default function App() {
   });
   const [isSyncing, setIsSyncing] = useState(false);
   const [showValues, setShowValues] = useState(true);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [formType, setFormType] = useState('expense'); // 'expense' | 'income'
 
-  // Modal States
-  const [showTransactionModal, setShowTransactionModal] = useState(false);
-  const [showBillModal, setShowBillModal] = useState(false);
-  const [showInvestmentModal, setShowInvestmentModal] = useState(false);
-  const [showAccountModal, setShowAccountModal] = useState(false);
-
-  // Form States
-  const [newTx, setNewTx] = useState({ title: '', amount: '', type: 'expense', category: 'Alimentari', accountId: '1', date: new Date().toISOString().split('T')[0] });
-  const [newBill, setNewBill] = useState({ title: '', amount: '', dueDate: '', category: 'Utenze' });
-  const [newInv, setNewInv] = useState({ name: '', category: 'ETF', invested: '', currentValue: '', shares: '' });
-  const [newAcc, setNewAcc] = useState({ name: '', type: 'bank', balance: '', iban: '' });
+  // Form State (Stile Screen 1)
+  const [newEntry, setNewEntry] = useState({
+    title: '',
+    amount: '',
+    dateOption: 'Today', // 'Today', 'Yesterday', 'Others'
+    customDate: new Date().toISOString().split('T')[0],
+    category: 'Alimentari',
+    accountId: '1',
+    description: ''
+  });
 
   // Autenticazione & Firestore Sync
   useEffect(() => {
@@ -96,7 +112,7 @@ export default function App() {
   const subscribeToFirestore = (uid) => {
     setIsSyncing(true);
     const userDocRef = doc(db, 'users', uid);
-    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+    return onSnapshot(userDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const cloudData = docSnap.data();
         setData(cloudData);
@@ -105,11 +121,7 @@ export default function App() {
         saveDataToFirestore(uid, data);
       }
       setIsSyncing(false);
-    }, (err) => {
-      console.warn("Firestore sync offline fallback:", err);
-      setIsSyncing(false);
-    });
-    return unsubscribe;
+    }, () => setIsSyncing(false));
   };
 
   const updateStateAndPersist = (newData) => {
@@ -125,385 +137,177 @@ export default function App() {
       setIsSyncing(true);
       await setDoc(doc(db, 'users', uid), dataToSave);
     } catch (e) {
-      console.error("Errore salvataggio cloud:", e);
+      console.error(e);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Calcoli Finanziari Consolidated
-  const totalBankBalance = useMemo(() => data.accounts.reduce((sum, a) => sum + Number(a.balance), 0), [data.accounts]);
-  const totalInvestedCarico = useMemo(() => data.investments.reduce((sum, i) => sum + Number(i.invested), 0), [data.investments]);
-  const totalInvestedCurrent = useMemo(() => data.investments.reduce((sum, i) => sum + Number(i.currentValue), 0), [data.investments]);
-  const pendingBillsTotal = useMemo(() => data.bills.filter(b => b.status === 'pending').reduce((sum, b) => sum + Number(b.amount), 0), [data.bills]);
+  // Calcoli Finanziari
+  const totalBalance = useMemo(() => data.accounts.reduce((sum, a) => sum + Number(a.balance), 0), [data.accounts]);
   
-  const totalNetWorth = totalBankBalance + totalInvestedCurrent - pendingBillsTotal;
-  const totalROI = totalInvestedCarico > 0 ? ((totalInvestedCurrent - totalInvestedCarico) / totalInvestedCarico) * 100 : 0;
-  const totalGainAbs = totalInvestedCurrent - totalInvestedCarico;
+  const monthlyExpenses = useMemo(() => 
+    data.transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount), 0),
+  [data.transactions]);
 
-  // Filtri Scadenze (Prossimi 30 giorni)
-  const upcomingBills = useMemo(() => {
-    const today = new Date();
-    const in30Days = new Date();
-    in30Days.setDate(today.getDate() + 30);
-    return data.bills.filter(b => {
-      const d = new Date(b.dueDate);
-      return d >= today && d <= in30Days && b.status === 'pending';
-    }).sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
-  }, [data.bills]);
+  const monthlyIncomes = useMemo(() => 
+    data.transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + Number(t.amount), 0),
+  [data.transactions]);
 
-  // Gestione Form
-  const handleAddTransaction = (e) => {
+  // Categorie distribuite per il grafico Donut (Stile Screen 3)
+  const categoryChartData = useMemo(() => {
+    const expenses = data.transactions.filter(t => t.type === 'expense');
+    const totalExp = expenses.reduce((sum, t) => sum + Number(t.amount), 0) || 1;
+    const catMap = {};
+
+    expenses.forEach(t => {
+      catMap[t.category] = (catMap[t.category] || 0) + Number(t.amount);
+    });
+
+    return Object.keys(catMap).map(cat => {
+      const amount = catMap[cat];
+      const percentage = (amount / totalExp) * 100;
+      const config = CATEGORY_CONFIG[cat] || CATEGORY_CONFIG['Altro'];
+      return {
+        category: cat,
+        amount,
+        percentage,
+        color: config.color,
+        bg: config.bg,
+        icon: config.icon
+      };
+    }).sort((a, b) => b.amount - a.amount);
+  }, [data.transactions]);
+
+  // Gestione Salva Movimento
+  const handleSaveEntry = (e) => {
     e.preventDefault();
-    if (!newTx.title || !newTx.amount) return;
-    const amountNum = parseFloat(newTx.amount);
+    if (!newEntry.amount) return;
+
+    const amountNum = parseFloat(newEntry.amount);
+    const dateFinal = newEntry.dateOption === 'Today' 
+      ? new Date().toISOString().split('T')[0]
+      : newEntry.dateOption === 'Yesterday'
+      ? new Date(Date.now() - 86400000).toISOString().split('T')[0]
+      : newEntry.customDate;
+
     const updatedAccs = data.accounts.map(acc => {
-      if (acc.id === newTx.accountId) {
-        const delta = newTx.type === 'income' ? amountNum : -amountNum;
-        return { ...acc, balance: acc.balance + delta };
+      if (acc.id === newEntry.accountId) {
+        const delta = formType === 'income' ? amountNum : -amountNum;
+        return { ...acc, balance: acc.balance + delta, projected: acc.projected + delta };
       }
       return acc;
     });
-    const updatedTx = [{ ...newTx, id: Date.now().toString(), amount: amountNum }, ...data.transactions];
-    updateStateAndPersist({ ...data, accounts: updatedAccs, transactions: updatedTx });
-    setShowTransactionModal(false);
-    setNewTx({ title: '', amount: '', type: 'expense', category: 'Alimentari', accountId: '1', date: new Date().toISOString().split('T')[0] });
-  };
 
-  const handleAddBill = (e) => {
-    e.preventDefault();
-    if (!newBill.title || !newBill.amount || !newBill.dueDate) return;
-    const updatedBills = [...data.bills, { ...newBill, id: Date.now().toString(), amount: parseFloat(newBill.amount), status: 'pending' }];
-    updateStateAndPersist({ ...data, bills: updatedBills });
-    setShowBillModal(false);
-    setNewBill({ title: '', amount: '', dueDate: '', category: 'Utenze' });
-  };
-
-  const handleAddInvestment = (e) => {
-    e.preventDefault();
-    if (!newInv.name || !newInv.invested) return;
-    const updatedInv = [...data.investments, {
-      ...newInv,
+    const newTx = {
       id: Date.now().toString(),
-      invested: parseFloat(newInv.invested),
-      currentValue: parseFloat(newInv.currentValue || newInv.invested),
-      shares: parseFloat(newInv.shares || 0)
-    }];
-    updateStateAndPersist({ ...data, investments: updatedInv });
-    setShowInvestmentModal(false);
-    setNewInv({ name: '', category: 'ETF', invested: '', currentValue: '', shares: '' });
-  };
-
-  const handleToggleBillStatus = (id) => {
-    const updatedBills = data.bills.map(b => b.id === id ? { ...b, status: b.status === 'paid' ? 'pending' : 'paid' } : b);
-    updateStateAndPersist({ ...data, bills: updatedBills });
-  };
-
-  // Import / Export JSON
-  const handleExportJSON = () => {
-    const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(JSON.stringify(data, null, 2))}`;
-    const link = document.createElement("a");
-    link.href = jsonString;
-    link.download = `backup_finanza_${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-  };
-
-  const handleImportJSON = (e) => {
-    const fileReader = new FileReader();
-    fileReader.readAsText(e.target.files[0], "UTF-8");
-    fileReader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target.result);
-        if (parsed.accounts && parsed.bills && parsed.investments) {
-          updateStateAndPersist(parsed);
-          alert("Backup ripristinato con successo!");
-        }
-      } catch (err) {
-        alert("File JSON non valido.");
-      }
+      title: newEntry.title || (formType === 'income' ? 'Entrata' : newEntry.category),
+      amount: amountNum,
+      type: formType,
+      category: newEntry.category,
+      accountId: newEntry.accountId,
+      date: dateFinal
     };
+
+    updateStateAndPersist({
+      ...data,
+      accounts: updatedAccs,
+      transactions: [newTx, ...data.transactions]
+    });
+
+    setShowFormModal(false);
+    setNewEntry({ title: '', amount: '', dateOption: 'Today', customDate: new Date().toISOString().split('T')[0], category: 'Alimentari', accountId: '1', description: '' });
   };
 
-  const formatEuro = (val) => showValues ? `€ ${val.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '••••••';
+  const formatMoney = (val) => showValues ? `$${val.toFixed(2)}` : '••••';
 
   return (
-    <div className="min-h-screen bg-[#090d16] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white pb-24 md:pb-10">
+    <div className="min-h-screen bg-[#F4F6F9] text-slate-800 font-sans pb-24 md:pb-12 select-none">
       
-      {/* Sfondi ed effetti Luce Ambientali */}
-      <div className="fixed top-0 left-1/4 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none" />
-      <div className="fixed bottom-10 right-10 w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[140px] pointer-events-none" />
-
-      {/* HEADER SUPERIORE */}
-      <header className="sticky top-0 z-40 backdrop-blur-2xl bg-[#090d16]/80 border-b border-slate-800/80 px-4 md:px-8 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 p-[2px] shadow-lg shadow-indigo-500/20">
-              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-indigo-400" />
-              </div>
-            </div>
-            <div>
-              <h1 className="text-lg font-bold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-                Finanza & Famiglia
+      {/* ----------------- INTESTAZIONE SUPERIORE MATERIA BLUE/GREEN ----------------- */}
+      <div className={`transition-colors duration-300 shadow-md ${
+        activeTab === 'analytics' ? 'bg-[#1E88E5]' :
+        activeTab === 'accounts' ? 'bg-[#1E88E5]' : 'bg-[#1976D2]'
+      }`}>
+        <div className="max-w-md mx-auto px-4 pt-4 pb-14 text-white">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold tracking-wide capitalize">
+                {activeTab === 'transactions' && 'Movimenti'}
+                {activeTab === 'analytics' && 'Analisi Spese'}
+                {activeTab === 'accounts' && 'I miei Conti'}
+                {activeTab === 'bills' && 'Scadenziario & Investimenti'}
+                {activeTab === 'backup' && 'Impostazioni Backup'}
               </h1>
-              <p className="text-xs text-slate-400 flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`}></span>
-                {isSyncing ? 'Sincronizzazione Cloud...' : 'Cloud Sincronizzato'}
-              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setShowValues(!showValues)} className="p-1.5 rounded-full hover:bg-white/10">
+                {showValues ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+              <Search className="w-5 h-5 cursor-pointer opacity-90" />
+              <Filter className="w-5 h-5 cursor-pointer opacity-90" />
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setShowValues(!showValues)}
-              className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-white transition"
-              title="Mostra/Nascondi Importi"
-            >
-              {showValues ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-            <button 
-              onClick={() => setShowTransactionModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-medium text-sm shadow-lg shadow-indigo-500/25 transition active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Nuovo Movimento</span>
-            </button>
+          {/* Selettore Mese (Stile Screenshot Reference) */}
+          <div className="flex items-center justify-center gap-6 text-sm font-medium opacity-95">
+            <ChevronLeft className="w-5 h-5 cursor-pointer" />
+            <span>Novembre 2026</span>
+            <ChevronRight className="w-5 h-5 cursor-pointer" />
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* CONTENUTO PRINCIPALE */}
-      <main className="max-w-7xl mx-auto px-4 md:px-8 mt-6">
-        
-        {/* NAVIGAZIONE TAB (Desktop & Mobile Scroll) */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 mb-6 border-b border-slate-800/60">
-          {[
-            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboardIcon },
-            { id: 'accounts', label: 'Conti & Carte', icon: CreditCard },
-            { id: 'bills', label: 'Scadenziario', icon: Calendar },
-            { id: 'investments', label: 'Investimenti', icon: TrendingUp },
-            { id: 'transactions', label: 'Movimenti', icon: Layers },
-            { id: 'backup', label: 'Backup & Cloud', icon: Shield }
-          ].map(tab => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all whitespace-nowrap ${
-                  active 
-                    ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-lg shadow-indigo-500/10' 
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${active ? 'text-indigo-400' : 'text-slate-400'}`} />
-                {tab.label}
-              </button>
-            );
-          })}
+      {/* ----------------- CARD RIASSUNTIVA SOVRAPPOSTA (Stile Screen 2 & 4) ----------------- */}
+      <div className="max-w-md mx-auto px-4 -mt-10">
+        <div className="bg-white rounded-2xl shadow-lg p-4 flex items-center justify-around border border-slate-100 text-center">
+          <div>
+            <span className="text-xs text-slate-400 font-medium block mb-0.5">Saldo Attuale</span>
+            <span className="text-base font-bold text-rose-500">{formatMoney(totalBalance)}</span>
+          </div>
+          <div className="w-[1px] h-8 bg-slate-100" />
+          <div>
+            <span className="text-xs text-slate-400 font-medium block mb-0.5">Spese Mensili</span>
+            <span className="text-base font-bold text-rose-500">-{formatMoney(monthlyExpenses)}</span>
+          </div>
         </div>
+      </div>
 
-        {/* 1. DASHBOARD OVERVIEW */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-            
-            {/* HERO NET WORTH CARD */}
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900/40 via-slate-900 to-slate-950 border border-indigo-500/20 p-6 md:p-8 shadow-2xl">
-              <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-                <div className="md:col-span-2 space-y-2">
-                  <span className="text-xs font-semibold tracking-wider text-indigo-400 uppercase flex items-center gap-1.5">
-                    <Activity className="w-3.5 h-3.5" /> Patrimoni Netto Consolidato
-                  </span>
-                  <div className="text-3xl md:text-5xl font-black text-white tracking-tight">
-                    {formatEuro(totalNetWorth)}
-                  </div>
-                  <p className="text-xs text-slate-400 pt-1">
-                    Calcolato da Liquidità ({formatEuro(totalBankBalance)}) + Investimenti Attuali ({formatEuro(totalInvestedCurrent)}) - Bollette Imminenti ({formatEuro(pendingBillsTotal)})
-                  </p>
-                </div>
+      {/* ----------------- CONTENUTO PRINCIPALE TAB ----------------- */}
+      <main className="max-w-md mx-auto px-4 mt-5">
 
-                {/* STATS RAPIDE */}
-                <div className="grid grid-cols-2 gap-3 pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-800/80 md:pl-6">
-                  <div className="bg-slate-900/80 rounded-2xl p-3.5 border border-slate-800">
-                    <span className="text-xs text-slate-400 block mb-1">Rendimento Investimenti</span>
-                    <span className={`text-base font-bold flex items-center gap-1 ${totalGainAbs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {totalGainAbs >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-                      {totalROI.toFixed(2)}%
-                    </span>
-                    <span className="text-[11px] text-slate-500 block">{formatEuro(totalGainAbs)}</span>
-                  </div>
-
-                  <div className="bg-slate-900/80 rounded-2xl p-3.5 border border-slate-800">
-                    <span className="text-xs text-slate-400 block mb-1">Bollette da Pagare</span>
-                    <span className="text-base font-bold text-amber-400 block">{formatEuro(pendingBillsTotal)}</span>
-                    <span className="text-[11px] text-slate-500 block">{upcomingBills.length} scadenze a breve</span>
-                  </div>
-                </div>
-              </div>
+        {/* TAB 1: TRANSAZIONI (Stile Screen 2) */}
+        {activeTab === 'transactions' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wider px-1">
+              <span>Oggi</span>
             </div>
 
-            {/* GRID SEZIONI RAPIDE */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              {/* SCADENZIARIO IMMINENTE */}
-              <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-800 p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-amber-400" /> Scadenze Prossimi 30 Giorni
-                  </h3>
-                  <button onClick={() => setActiveTab('bills')} className="text-xs text-indigo-400 hover:underline flex items-center">
-                    Vedi tutte <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {upcomingBills.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-6 text-center">Nessuna bolletta o spesa in scadenza nei prossimi 30 giorni 🎉</p>
-                ) : (
-                  <div className="space-y-3">
-                    {upcomingBills.slice(0, 3).map(bill => (
-                      <div key={bill.id} className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950/50 border border-slate-800/80 hover:border-slate-700/60 transition">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-200">{bill.title}</p>
-                          <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                            <Calendar className="w-3 h-3" /> Scadenza: {bill.dueDate}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-amber-400">{formatEuro(bill.amount)}</p>
-                          <button 
-                            onClick={() => handleToggleBillStatus(bill.id)} 
-                            className="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium mt-0.5"
-                          >
-                            Segna Pagata
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* RIEPILOGO LIQUIDITA' E PORTAFOGLIO */}
-              <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-800 p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Wallet className="w-4 h-4 text-emerald-400" /> Liquidità & Saldi Conti
-                  </h3>
-                  <button onClick={() => setActiveTab('accounts')} className="text-xs text-indigo-400 hover:underline flex items-center">
-                    Gestisci Conti <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {data.accounts.map(acc => (
-                    <div key={acc.id} className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950/50 border border-slate-800/80">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-                          <CreditCard className="w-4.5 h-4.5" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-200">{acc.name}</p>
-                          <p className="text-xs text-slate-500 capitalize">{acc.type}</p>
-                        </div>
-                      </div>
-                      <p className="text-sm font-bold text-emerald-400">{formatEuro(acc.balance)}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* 2. GESTIONE CONTI & CARTE */}
-        {activeTab === 'accounts' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Conti Correnti & Carte</h2>
-                <p className="text-xs text-slate-400">Monitora e aggiorna la tua liquidità disponbile.</p>
-              </div>
-              <button 
-                onClick={() => setShowAccountModal(true)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-semibold hover:bg-slate-800"
-              >
-                <Plus className="w-3.5 h-3.5" /> Aggiungi Conto
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {data.accounts.map(acc => (
-                <div key={acc.id} className="relative overflow-hidden rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 capitalize">
-                      {acc.type}
-                    </span>
-                    <Wallet className="w-5 h-5 text-slate-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-white">{acc.name}</h3>
-                    <p className="text-xs text-slate-500 truncate mt-0.5">{acc.iban || 'Nessun IBAN salvato'}</p>
-                  </div>
-                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                    <span className="text-xs text-slate-400">Saldo Attuale</span>
-                    <span className="text-lg font-extrabold text-emerald-400">{formatEuro(acc.balance)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 3. SCADENZIARIO & BOLLETTE */}
-        {activeTab === 'bills' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Scadenziario & Spese Ricorrenti</h2>
-                <p className="text-xs text-slate-400">Gestisci bollette, abbonamenti e rate in scadenza.</p>
-              </div>
-              <button 
-                onClick={() => setShowBillModal(true)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-semibold hover:bg-slate-800"
-              >
-                <Plus className="w-3.5 h-3.5" /> Aggiungi Scadenza
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {data.bills.map(bill => {
-                const isPaid = bill.status === 'paid';
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-100 overflow-hidden">
+              {data.transactions.map((t) => {
+                const catConf = CATEGORY_CONFIG[t.category] || CATEGORY_CONFIG['Altro'];
+                const IconComponent = catConf.icon;
+                const isExpense = t.type === 'expense';
                 return (
-                  <div key={bill.id} className={`rounded-3xl border p-5 flex items-center justify-between transition ${
-                    isPaid ? 'bg-slate-950/40 border-slate-800/50 opacity-60' : 'bg-slate-900/80 border-slate-800'
-                  }`}>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${isPaid ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
-                        <h3 className="text-sm font-bold text-white">{bill.title}</h3>
+                  <div key={t.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition">
+                    <div className="flex items-center gap-3">
+                      {/* Icona circolare colorata */}
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${catConf.bg}`}>
+                        <IconComponent className="w-5 h-5" />
                       </div>
-                      <p className="text-xs text-slate-400 flex items-center gap-1">
-                        <Tag className="w-3 h-3 text-slate-500" /> {bill.category} • Scadenza: {bill.dueDate}
-                      </p>
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-800">{t.title}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">{t.category} | Wallet</p>
+                      </div>
                     </div>
 
-                    <div className="text-right space-y-2">
-                      <div className="text-base font-extrabold text-white">{formatEuro(bill.amount)}</div>
-                      <button 
-                        onClick={() => handleToggleBillStatus(bill.id)}
-                        className={`px-3 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-                          isPaid 
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20'
-                        }`}
-                      >
-                        {isPaid ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-                        {isPaid ? 'Pagato' : 'Segna Pagato'}
-                      </button>
+                    <div className="text-right flex items-center gap-2">
+                      <span className={`text-sm font-bold ${isExpense ? 'text-rose-500' : 'text-emerald-600'}`}>
+                        {isExpense ? '-' : '+'}{formatMoney(t.amount)}
+                      </span>
+                      <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center text-white">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
                     </div>
                   </div>
                 );
@@ -512,60 +316,41 @@ export default function App() {
           </div>
         )}
 
-        {/* 4. TRACCIAMENTO INVESTIMENTI */}
-        {activeTab === 'investments' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Portafoglio Investimenti</h2>
-                <p className="text-xs text-slate-400">Traccia ETF, Azioni e Titoli di Stato con calcolo del ROI.</p>
-              </div>
-              <button 
-                onClick={() => setShowInvestmentModal(true)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-semibold hover:bg-slate-800"
-              >
-                <Plus className="w-3.5 h-3.5" /> Aggiungi Strumento
-              </button>
+        {/* TAB 2: ANALISI & DONUT CHART (Stile Screen 3) */}
+        {activeTab === 'analytics' && (
+          <div className="space-y-5">
+            {/* Pilloli di filtro categoria */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+              <button className="px-4 py-1.5 rounded-full bg-sky-100 text-sky-700 font-semibold text-xs whitespace-nowrap shadow-sm">Spese per categoria</button>
+              <button className="px-4 py-1.5 rounded-full bg-white text-slate-500 font-semibold text-xs whitespace-nowrap border border-slate-200">Spese per conto</button>
             </div>
 
-            {/* PERFORMANCE BAR */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-4">
-                <span className="text-xs text-slate-400">Capitale Investito (PAC)</span>
-                <p className="text-xl font-bold text-white mt-1">{formatEuro(totalInvestedCarico)}</p>
-              </div>
-              <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-4">
-                <span className="text-xs text-slate-400">Valore Attuale Mercato</span>
-                <p className="text-xl font-bold text-indigo-400 mt-1">{formatEuro(totalInvestedCurrent)}</p>
-              </div>
-              <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-4">
-                <span className="text-xs text-slate-400">Profitto / Perdita (ROI)</span>
-                <p className={`text-xl font-bold mt-1 flex items-center gap-1 ${totalGainAbs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {totalGainAbs >= 0 ? '+' : ''}{formatEuro(totalGainAbs)} ({totalROI.toFixed(2)}%)
-                </p>
-              </div>
+            {/* Grafico Donut */}
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 text-center">
+              <DonutChart data={categoryChartData} total={monthlyExpenses} />
             </div>
 
-            {/* LISTA STRUMENTI */}
-            <div className="space-y-3">
-              {data.investments.map(inv => {
-                const gain = inv.currentValue - inv.invested;
-                const roi = inv.invested > 0 ? (gain / inv.invested) * 100 : 0;
+            {/* Lista Percentuali Categorie (Stile Screen 3) */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-100 overflow-hidden">
+              {categoryChartData.map((item, idx) => {
+                const IconComponent = item.icon;
                 return (
-                  <div key={inv.id} className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">{inv.category}</span>
-                        <h4 className="text-sm font-bold text-white">{inv.name}</h4>
+                  <div key={idx} className="p-3.5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center ${item.bg}`}>
+                        <IconComponent className="w-4 h-4" />
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">Capitale Investito: {formatEuro(inv.invested)}</p>
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-800">{item.category}</h4>
+                        <div className="w-24 bg-slate-100 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${item.percentage}%`, backgroundColor: item.color }} />
+                        </div>
+                      </div>
                     </div>
 
                     <div className="text-right">
-                      <p className="text-sm font-bold text-white">{formatEuro(inv.currentValue)}</p>
-                      <p className={`text-xs font-semibold ${gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {gain >= 0 ? '+' : ''}{formatEuro(gain)} ({roi.toFixed(1)}%)
-                      </p>
+                      <span className="text-sm font-bold text-rose-500 block">{formatMoney(item.amount)}</span>
+                      <span className="text-xs text-slate-400 font-medium">{item.percentage.toFixed(1)}%</span>
                     </div>
                   </div>
                 );
@@ -574,177 +359,267 @@ export default function App() {
           </div>
         )}
 
-        {/* 5. MOVIMENTI & TRANSAZIONI */}
-        {activeTab === 'transactions' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Registro Movimenti</h2>
-                <p className="text-xs text-slate-400">Tutti i movimenti di entrata e uscita registrati.</p>
+        {/* TAB 3: CONTI & CARTE (Stile Screen 4) */}
+        {activeTab === 'accounts' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <span className="text-xs text-slate-400 font-semibold">Proiezione Saldo Finale</span>
+                <span className="text-sm font-bold text-emerald-600">{formatMoney(totalBalance)}</span>
               </div>
-              <button 
-                onClick={() => setShowTransactionModal(true)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20"
-              >
-                <Plus className="w-3.5 h-3.5" /> Nuovo Movimento
-              </button>
-            </div>
 
-            <div className="space-y-2">
-              {data.transactions.map(tx => (
-                <div key={tx.id} className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between hover:border-slate-700/60 transition">
+              {data.accounts.map(acc => (
+                <div key={acc.id} className="flex items-center justify-between py-2">
                   <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                      tx.type === 'income' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
-                    }`}>
-                      {tx.type === 'income' ? <ArrowDownRight className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                    <div className="w-9 h-9 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center border border-sky-100">
+                      <Wallet className="w-4.5 h-4.5" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-slate-200">{tx.title}</p>
-                      <p className="text-xs text-slate-500">{tx.date} • Tag: {tx.category}</p>
+                      <h4 className="text-sm font-semibold text-slate-800">{acc.name}</h4>
+                      <span className="text-xs text-slate-400">Saldo Disponibile</span>
                     </div>
                   </div>
-                  <p className={`text-sm font-extrabold ${tx.type === 'income' ? 'text-emerald-400' : 'text-slate-200'}`}>
-                    {tx.type === 'income' ? '+' : '-'}{formatEuro(tx.amount)}
-                  </p>
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-emerald-600 block">{formatMoney(acc.balance)}</span>
+                    <span className="text-xs text-slate-400">{formatMoney(acc.projected)}</span>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* 6. BACKUP & CLOUD */}
+        {/* TAB 4: SCADENZIARIO & INVESTIMENTI */}
+        {activeTab === 'bills' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-500" /> Scadenze Utenze
+              </h3>
+              {data.bills.map(b => (
+                <div key={b.id} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-700">{b.title}</p>
+                    <p className="text-[11px] text-slate-400">Scadenza: {b.dueDate}</p>
+                  </div>
+                  <span className="text-xs font-bold text-amber-600">{formatMoney(b.amount)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-600" /> Portafoglio ETF
+              </h3>
+              {data.investments.map(inv => (
+                <div key={inv.id} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-700">{inv.name}</p>
+                    <p className="text-[11px] text-slate-400">Investito: {formatMoney(inv.invested)}</p>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-600">{formatMoney(inv.currentValue)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: BACKUP & DATI */}
         {activeTab === 'backup' && (
-          <div className="space-y-6 max-w-2xl mx-auto">
-            <div className="bg-slate-900/60 rounded-3xl border border-slate-800 p-6 space-y-6">
-              <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-indigo-400" /> Backup Dati e Ripristino Local/Cloud
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">
-                  I tuoi dati sono sincronizzati automaticamente su Firebase Firestore e salvati nel LocalStorage. Puoi scaricare o caricare un file JSON di backup in qualsiasi momento.
-                </p>
-              </div>
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 space-y-4 text-center">
+            <Shield className="w-10 h-10 text-sky-600 mx-auto" />
+            <h3 className="text-base font-bold text-slate-800">Gestione Dati & Cloud</h3>
+            <p className="text-xs text-slate-500">I dati sono salvati nel browser ed in Firebase Cloud.</p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button 
-                  onClick={handleExportJSON}
-                  className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-indigo-500/40 flex flex-col items-center justify-center gap-2 text-center transition group"
-                >
-                  <Download className="w-6 h-6 text-indigo-400 group-hover:scale-110 transition" />
-                  <span className="text-sm font-bold text-white">Esporta Backup JSON</span>
-                  <span className="text-[11px] text-slate-500">Salva una copia offline di tutti i tuoi dati</span>
-                </button>
+            <div className="flex gap-3 pt-2">
+              <button 
+                onClick={() => {
+                  const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(data, null, 2))}`;
+                  const link = document.createElement("a");
+                  link.href = jsonString;
+                  link.download = `backup_finanza_${new Date().toISOString().split('T')[0]}.json`;
+                  link.click();
+                }}
+                className="w-1/2 py-2.5 rounded-xl bg-sky-600 text-white font-semibold text-xs flex items-center justify-center gap-1.5"
+              >
+                <Download className="w-4 h-4" /> Esporta JSON
+              </button>
 
-                <label className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-indigo-500/40 flex flex-col items-center justify-center gap-2 text-center transition cursor-pointer group">
-                  <Upload className="w-6 h-6 text-purple-400 group-hover:scale-110 transition" />
-                  <span className="text-sm font-bold text-white">Ripristina da File</span>
-                  <span className="text-[11px] text-slate-500">Carica un file di backup JSON esistente</span>
-                  <input type="file" accept=".json" onChange={handleImportJSON} className="hidden" />
-                </label>
-              </div>
+              <label className="w-1/2 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer">
+                <Upload className="w-4 h-4" /> Ripristina
+                <input 
+                  type="file" accept=".json" className="hidden" 
+                  onChange={(e) => {
+                    const reader = new FileReader();
+                    reader.readAsText(e.target.files[0]);
+                    reader.onload = (event) => {
+                      const parsed = JSON.parse(event.target.result);
+                      if (parsed.accounts) updateStateAndPersist(parsed);
+                    };
+                  }} 
+                />
+              </label>
             </div>
           </div>
         )}
 
       </main>
 
-      {/* MODAL NUOVO MOVIMENTO */}
-      {showTransactionModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-lg font-bold text-white">Nuova Transazione</h3>
-            <form onSubmit={handleAddTransaction} className="space-y-3">
-              <input 
-                type="text" placeholder="Descrizione (es. Spesa, Stipendio)" 
-                value={newTx.title} onChange={e => setNewTx({...newTx, title: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500" required
-              />
-              <input 
-                type="number" step="0.01" placeholder="Importo €" 
-                value={newTx.amount} onChange={e => setNewTx({...newTx, amount: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500" required
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <select 
-                  value={newTx.type} onChange={e => setNewTx({...newTx, type: e.target.value})}
-                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white"
-                >
-                  <option value="expense">Uscita</option>
-                  <option value="income">Entrata</option>
-                </select>
-                <select 
-                  value={newTx.accountId} onChange={e => setNewTx({...newTx, accountId: e.target.value})}
-                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white"
-                >
-                  {data.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowTransactionModal(false)} className="w-1/2 py-2.5 rounded-xl bg-slate-800 text-xs font-semibold">Annulla</button>
-                <button type="submit" className="w-1/2 py-2.5 rounded-xl bg-indigo-600 text-xs font-semibold text-white">Salva</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* ----------------- BOTTONE AZIONE FLUTTUANTE (+) STILE SCREENSHOT ----------------- */}
+      <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-40">
+        <button 
+          onClick={() => setShowFormModal(true)}
+          className="w-14 h-14 rounded-full bg-[#1976D2] hover:bg-blue-700 text-white flex items-center justify-center shadow-xl shadow-blue-500/30 transition active:scale-95"
+        >
+          <Plus className="w-8 h-8 stroke-[2.5]" />
+        </button>
+      </div>
 
-      {/* MODAL NUOVA SCADENZA */}
-      {showBillModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-lg font-bold text-white">Aggiungi Bolletta / Spesa Ricorrente</h3>
-            <form onSubmit={handleAddBill} className="space-y-3">
-              <input 
-                type="text" placeholder="Nome Spesa (es. Luce, Mutuo)" 
-                value={newBill.title} onChange={e => setNewBill({...newBill, title: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white" required
-              />
-              <input 
-                type="number" step="0.01" placeholder="Importo €" 
-                value={newBill.amount} onChange={e => setNewBill({...newBill, amount: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white" required
-              />
-              <input 
-                type="date" 
-                value={newBill.dueDate} onChange={e => setNewBill({...newBill, dueDate: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white" required
-              />
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowBillModal(false)} className="w-1/2 py-2.5 rounded-xl bg-slate-800 text-xs font-semibold">Annulla</button>
-                <button type="submit" className="w-1/2 py-2.5 rounded-xl bg-indigo-600 text-xs font-semibold text-white">Salva</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* ----------------- BOTTOM BAR DI NAVIGAZIONE ----------------- */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 py-2 px-6">
+        <div className="max-w-md mx-auto flex items-center justify-between text-slate-400">
+          <button 
+            onClick={() => setActiveTab('transactions')} 
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-medium ${activeTab === 'transactions' ? 'text-sky-600' : ''}`}
+          >
+            <Layers className="w-5 h-5" /> Movimenti
+          </button>
 
-      {/* MODAL NUOVO INVESTIMENTO */}
-      {showInvestmentModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-lg font-bold text-white">Nuovo Strumento Finanziario</h3>
-            <form onSubmit={handleAddInvestment} className="space-y-3">
-              <input 
-                type="text" placeholder="Nome Strumento (es. VWCE, BTP 2030)" 
-                value={newInv.name} onChange={e => setNewInv({...newInv, name: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white" required
-              />
-              <input 
-                type="number" step="0.01" placeholder="Capitale Investito € (Prezzo di carico)" 
-                value={newInv.invested} onChange={e => setNewInv({...newInv, invested: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white" required
-              />
-              <input 
-                type="number" step="0.01" placeholder="Valore Attuale Mercato €" 
-                value={newInv.currentValue} onChange={e => setNewInv({...newInv, currentValue: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white"
-              />
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowInvestmentModal(false)} className="w-1/2 py-2.5 rounded-xl bg-slate-800 text-xs font-semibold">Annulla</button>
-                <button type="submit" className="w-1/2 py-2.5 rounded-xl bg-indigo-600 text-xs font-semibold text-white">Salva</button>
+          <button 
+            onClick={() => setActiveTab('analytics')} 
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-medium ${activeTab === 'analytics' ? 'text-sky-600' : ''}`}
+          >
+            <PieChart className="w-5 h-5" /> Analisi
+          </button>
+
+          <div className="w-10" /> {/* Spazio per il pulsante centrale + */}
+
+          <button 
+            onClick={() => setActiveTab('accounts')} 
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-medium ${activeTab === 'accounts' ? 'text-sky-600' : ''}`}
+          >
+            <Wallet className="w-5 h-5" /> Conti
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('backup')} 
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-medium ${activeTab === 'backup' ? 'text-sky-600' : ''}`}
+          >
+            <Shield className="w-5 h-5" /> Cloud
+          </button>
+        </div>
+      </div>
+
+      {/* ----------------- SCHERMATA FORM INSERIMENTO (Stile Screen 1) ----------------- */}
+      {showFormModal && (
+        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+          {/* Header Colorato Form */}
+          <div className={`${formType === 'income' ? 'bg-[#43A047]' : 'bg-[#1976D2]'} text-white p-4 pb-8 transition-colors`}>
+            <div className="flex items-center justify-between">
+              <button onClick={() => setShowFormModal(false)} className="p-1">
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <h2 className="text-base font-semibold">
+                {formType === 'income' ? 'Nuova Entrata' : 'Nuova Uscita'}
+              </h2>
+              <div className="w-6" />
+            </div>
+
+            {/* Input Importo Grande */}
+            <div className="mt-6 text-center">
+              <span className="text-xs uppercase tracking-wider opacity-80 block mb-1">Importo</span>
+              <div className="flex items-center justify-center gap-1 text-4xl font-extrabold">
+                <span>$</span>
+                <input 
+                  type="number" step="0.01" placeholder="0.00" 
+                  value={newEntry.amount} onChange={e => setNewEntry({...newEntry, amount: e.target.value})}
+                  className="bg-transparent text-white placeholder-white/60 text-center outline-none w-48"
+                  autoFocus
+                />
               </div>
-            </form>
+            </div>
+          </div>
+
+          {/* Form Inserimento Bianco */}
+          <div className="flex-1 bg-white p-5 space-y-5 overflow-y-auto">
+            {/* Toggle Tipo (Entrata/Uscita) */}
+            <div className="flex items-center justify-between py-2 border-b border-slate-100">
+              <span className="text-sm font-medium text-slate-600">Tipo Operazione</span>
+              <div className="flex bg-slate-100 rounded-full p-1">
+                <button 
+                  onClick={() => setFormType('expense')}
+                  className={`px-4 py-1 rounded-full text-xs font-semibold ${formType === 'expense' ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500'}`}
+                >
+                  Uscita
+                </button>
+                <button 
+                  onClick={() => setFormType('income')}
+                  className={`px-4 py-1 rounded-full text-xs font-semibold ${formType === 'income' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500'}`}
+                >
+                  Entrata
+                </button>
+              </div>
+            </div>
+
+            {/* Pilloli Data */}
+            <div className="space-y-2">
+              <span className="text-xs text-slate-400 font-semibold uppercase">Data</span>
+              <div className="flex items-center gap-2">
+                {['Today', 'Yesterday', 'Others'].map(opt => (
+                  <button 
+                    key={opt}
+                    onClick={() => setNewEntry({...newEntry, dateOption: opt})}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold border ${
+                      newEntry.dateOption === opt 
+                        ? 'bg-emerald-100 border-emerald-400 text-emerald-700' 
+                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    {opt === 'Today' ? 'Oggi' : opt === 'Yesterday' ? 'Ieri' : 'Altro'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Descrizione */}
+            <div className="flex items-center gap-3 py-2 border-b border-slate-100">
+              <Tag className="w-5 h-5 text-slate-400" />
+              <input 
+                type="text" placeholder="Descrizione (es. Spesa, Benzina)"
+                value={newEntry.title} onChange={e => setNewEntry({...newEntry, title: e.target.value})}
+                className="w-full text-sm text-slate-800 outline-none"
+              />
+            </div>
+
+            {/* Selezione Categoria */}
+            <div className="space-y-2">
+              <span className="text-xs text-slate-400 font-semibold uppercase">Categoria</span>
+              <div className="grid grid-cols-3 gap-2">
+                {Object.keys(CATEGORY_CONFIG).map(cat => (
+                  <button 
+                    type="button" key={cat}
+                    onClick={() => setNewEntry({...newEntry, category: cat})}
+                    className={`p-2 rounded-xl text-xs font-medium border text-center truncate ${
+                      newEntry.category === cat 
+                        ? 'bg-sky-50 border-sky-400 text-sky-700 font-bold' 
+                        : 'border-slate-100 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Botton Registra Spunta Verde */}
+          <div className="p-4 bg-white border-t border-slate-100 flex justify-center">
+            <button 
+              onClick={handleSaveEntry}
+              className="w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 active:scale-95"
+            >
+              <Check className="w-8 h-8 stroke-[3]" />
+            </button>
           </div>
         </div>
       )}
@@ -753,14 +628,40 @@ export default function App() {
   );
 }
 
-// Icona Dashboard Custom
-function LayoutDashboardIcon(props) {
+// COMPONENTE GRAFICO DONUT SVG
+function DonutChart({ data, total }) {
+  let cumulativePercent = 0;
   return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect width="7" height="9" x="3" y="3" rx="1"/>
-      <rect width="7" height="5" x="14" y="3" rx="1"/>
-      <rect width="7" height="9" x="14" y="12" rx="1"/>
-      <rect width="7" height="5" x="3" y="16" rx="1"/>
-    </svg>
+    <div className="relative w-48 h-48 mx-auto flex items-center justify-center">
+      <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+        <path
+          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+          fill="none"
+          stroke="#F1F5F9"
+          strokeWidth="4"
+        />
+        {data.map((item, index) => {
+          const strokeDasharray = `${item.percentage} ${100 - item.percentage}`;
+          const strokeDashoffset = 100 - cumulativePercent + 25;
+          cumulativePercent += item.percentage;
+          return (
+            <path
+              key={index}
+              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+              fill="none"
+              stroke={item.color}
+              strokeWidth="4.5"
+              strokeDasharray={strokeDasharray}
+              strokeDashoffset={strokeDashoffset}
+              className="transition-all duration-500"
+            />
+          );
+        })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <span className="text-xl font-bold text-slate-800">${total.toFixed(2)}</span>
+        <span className="text-xs font-semibold text-slate-400">Totale Spese</span>
+      </div>
+    </div>
   );
 }
