@@ -6,8 +6,7 @@ import {
   Wallet, CreditCard, TrendingUp, Calendar, Plus, Shield, Check, Clock,
   PieChart, Tag, ArrowUpRight, ArrowDownRight, Car, Home, ShoppingBag, 
   Utensils, Briefcase, Gift, Zap, X, Eye, EyeOff, LayoutDashboard, Download, 
-  Layers, Calculator, BarChart3, Pencil, Trash2, Layers3, Flame, Tv, FileText,
-  DollarSign
+  Layers, Calculator, BarChart3, Pencil, Trash2, Layers3, Flame, Filter
 } from 'lucide-react';
 
 // --- CONFIGURAZIONE FIREBASE ---
@@ -103,6 +102,8 @@ const budgetRules = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [investSubTab, setInvestSubTab] = useState('all'); // Sub-views per Investimenti: 'all', 'allocation', 'performance', 'table'
+  
   const [user, setUser] = useState(null);
   const [data, setData] = useState(() => {
     const local = localStorage.getItem('finanza_app_data');
@@ -112,7 +113,14 @@ export default function App() {
 
   // Modali State
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newTx, setNewTx] = useState({ title: '', amount: '', type: 'expense', category: 'Alimentari', accountId: '1', date: new Date().toISOString().split('T')[0] });
+  const [newTx, setNewTx] = useState({ 
+    title: '', 
+    amount: '', 
+    type: 'expense', 
+    category: 'Alimentari', 
+    accountId: '1', 
+    date: new Date().toISOString().split('T')[0] 
+  });
 
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState(null);
@@ -161,17 +169,14 @@ export default function App() {
   const totalInvestedCarico = useMemo(() => data.investments.reduce((sum, i) => sum + Number(i.invested), 0), [data.investments]);
   const totalInvestedCurrent = useMemo(() => data.investments.reduce((sum, i) => sum + Number(i.currentValue), 0), [data.investments]);
   const pendingBills = useMemo(() => data.bills.filter(b => b.status === 'pending').reduce((sum, b) => sum + Number(b.amount), 0), [data.bills]);
-  const paidBills = useMemo(() => data.bills.filter(b => b.status === 'paid').reduce((sum, b) => sum + Number(b.amount), 0), [data.bills]);
   const netWorth = totalBankBalance + totalInvestedCurrent - pendingBills;
   const totalGainAbs = totalInvestedCurrent - totalInvestedCarico;
   const totalROI = totalInvestedCarico > 0 ? (totalGainAbs / totalInvestedCarico) * 100 : 0;
 
   // --- CALCOLI DASHBOARD: SPESE DEL MESE & GRAFICO % ---
   const monthlyExpensesData = useMemo(() => {
-    const currentMonthPrefix = new Date().toISOString().slice(0, 7); // es: "2026-11"
+    const currentMonthPrefix = new Date().toISOString().slice(0, 7);
     const expenses = data.transactions.filter(tx => tx.type === 'expense');
-    
-    // Filtra transazioni del mese corrente (se non ce ne sono, prende tutte le uscite registrate per test)
     const monthExpenses = expenses.filter(tx => tx.date.startsWith(currentMonthPrefix));
     const activeExpensesList = monthExpenses.length > 0 ? monthExpenses : expenses;
     
@@ -253,7 +258,7 @@ export default function App() {
     return { categoryList, luceGasTotal, luceGasCount, totalAllBills };
   }, [data.bills]);
 
-  // --- HANDLER CRUD TRANSAZIONI ---
+  // --- HANDLER TRANSAZIONI (CON SELEZIONE CATEGORIA CORRETTA) ---
   const handleAddTx = (e) => {
     e.preventDefault();
     if (!newTx.title || !newTx.amount) return;
@@ -508,7 +513,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* LEGENDA E BARRE PERCENTUALI SPESE */}
+                {/* LEGENDA SPESE */}
                 <div className="space-y-3 w-full">
                   {monthlyExpensesData.categoriesList.map((cat, idx) => (
                     <div key={idx} className="space-y-1">
@@ -639,15 +644,18 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. INVESTIMENTI & GRAFICI TAB */}
+        {/* 3. INVESTIMENTI & GRAFICI TAB (CON SOTTO-VISTE ISOLATE PER I GRAFICI) */}
         {activeTab === 'investments' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center flex-wrap gap-3">
+            
+            {/* INTESTAZIONE E SOTTO-NAVIGAZIONE */}
+            <div className="flex justify-between items-center flex-wrap gap-4 border-b border-slate-800 pb-4">
               <div>
                 <h2 className="text-lg font-bold text-white">Analisi Investimenti & Portafoglio</h2>
-                <p className="text-xs text-slate-400">Composizione per Asset Class e rendimento di ciascun titolo.</p>
+                <p className="text-xs text-slate-400">Composizione asset class, rendimento e tabella dettagliata</p>
               </div>
-              <div className="flex items-center gap-3">
+
+              <div className="flex items-center gap-2">
                 <div className={`px-3.5 py-2 rounded-xl text-xs font-bold ${totalGainAbs >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
                   ROI: {totalGainAbs >= 0 ? '+' : ''}{formatEuro(totalGainAbs)} ({totalROI.toFixed(2)}%)
                 </div>
@@ -660,17 +668,39 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
+            {/* BARRA SOTTO-NAVIGAZIONE GRAFICI */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+              {[
+                { id: 'all', label: 'Tutte le Viste' },
+                { id: 'allocation', label: 'Allocazione Asset Class' },
+                { id: 'performance', label: 'Rendimento Titoli' },
+                { id: 'table', label: 'Tabella Portafoglio' }
+              ].map(sub => (
+                <button
+                  key={sub.id}
+                  onClick={() => setInvestSubTab(sub.id)}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                    investSubTab === sub.id 
+                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' 
+                      : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {sub.label}
+                </button>
+              ))}
+            </div>
+
+            {/* SEZIONI GRAFICI SEPARATE E ISOLATE */}
+            {(investSubTab === 'all' || investSubTab === 'allocation') && (
               <div className="bg-slate-900/60 p-6 rounded-3xl border border-slate-800 space-y-4">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <PieChart className="w-4 h-4 text-purple-400" /> Allocazione Asset Class
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <PieChart className="w-5 h-5 text-purple-400" /> Allocazione per Asset Class
                 </h3>
 
-                <div className="flex flex-col sm:flex-row items-center gap-6 py-2">
-                  <div className="relative w-44 h-44 shrink-0 flex items-center justify-center">
+                <div className="flex flex-col md:flex-row items-center gap-8 py-2">
+                  <div className="relative w-52 h-52 shrink-0 flex items-center justify-center">
                     <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
-                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#1E293B" strokeWidth="4.5" />
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#1E293B" strokeWidth="4" />
                       {investmentCategories.reduce((acc, cat, idx) => {
                         const dasharray = `${cat.pct} ${100 - cat.pct}`;
                         const offset = acc.offset;
@@ -681,7 +711,7 @@ export default function App() {
                             d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                             fill="none"
                             stroke={cat.color}
-                            strokeWidth="4.5"
+                            strokeWidth="4"
                             strokeDasharray={dasharray}
                             strokeDashoffset={offset}
                           />
@@ -689,140 +719,154 @@ export default function App() {
                         return acc;
                       }, { offset: 0, paths: [] }).paths}
                     </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                      <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Totale Investito</span>
+                      <span className="text-base font-extrabold text-white">{formatEuro(totalInvestedCurrent)}</span>
+                    </div>
                   </div>
 
-                  <div className="space-y-2 w-full">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
                     {investmentCategories.map((cat, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                          <span className="text-slate-300 font-medium truncate max-w-[120px] sm:max-w-[150px]">{cat.name}</span>
+                      <div key={idx} className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                          <span className="text-xs text-slate-200 font-semibold">{cat.name}</span>
                         </div>
                         <div className="text-right">
-                          <span className="font-bold text-white block">{formatEuro(cat.amount)}</span>
-                          <span className="text-[10px] text-slate-500">{cat.pct.toFixed(1)}%</span>
+                          <span className="text-xs font-bold text-white block">{formatEuro(cat.amount)}</span>
+                          <span className="text-[10px] text-slate-400">{cat.pct.toFixed(1)}%</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
+            )}
 
+            {(investSubTab === 'all' || investSubTab === 'performance') && (
               <div className="bg-slate-900/60 p-6 rounded-3xl border border-slate-800 space-y-4">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-emerald-400" /> Performance Relativa dei Titoli
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-emerald-400" /> Confronto Prezzo Carico vs Mercato
                 </h3>
 
-                <div className="space-y-4 pt-1">
-                  {data.investments.slice(0, 5).map(inv => {
+                <div className="space-y-4 pt-2">
+                  {data.investments.map(inv => {
                     const maxVal = Math.max(inv.invested, inv.currentValue);
                     const pctInvested = (inv.invested / maxVal) * 100;
                     const pctCurrent = (inv.currentValue / maxVal) * 100;
                     const isProfit = inv.currentValue >= inv.invested;
 
                     return (
-                      <div key={inv.id} className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="font-semibold text-slate-200 truncate max-w-[180px]">{inv.name}</span>
+                      <div key={inv.id} className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">{inv.category}</span>
+                            <span className="font-bold text-white">{inv.name}</span>
+                          </div>
                           <span className={`font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {isProfit ? '+' : ''}{formatEuro(inv.currentValue - inv.invested)}
                           </span>
                         </div>
 
-                        <div className="space-y-1">
-                          <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden flex">
-                            <div className="bg-slate-600 h-full rounded-full transition-all duration-500" style={{ width: `${pctInvested}%` }} />
+                        <div className="space-y-1.5 pt-1">
+                          <div className="flex items-center gap-3 text-[11px]">
+                            <span className="w-24 text-slate-400 shrink-0">Investito:</span>
+                            <div className="flex-1 bg-slate-950 h-2 rounded-full overflow-hidden">
+                              <div className="bg-slate-600 h-full rounded-full" style={{ width: `${pctInvested}%` }} />
+                            </div>
+                            <span className="w-20 text-right font-medium text-slate-300">{formatEuro(inv.invested)}</span>
                           </div>
-                          <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex">
-                            <div className={`${isProfit ? 'bg-emerald-500' : 'bg-rose-500'} h-full rounded-full transition-all duration-500`} style={{ width: `${pctCurrent}%` }} />
+
+                          <div className="flex items-center gap-3 text-[11px]">
+                            <span className="w-24 text-slate-400 shrink-0">Valore Attuale:</span>
+                            <div className="flex-1 bg-slate-950 h-2.5 rounded-full overflow-hidden">
+                              <div className={`${isProfit ? 'bg-emerald-500' : 'bg-rose-500'} h-full rounded-full`} style={{ width: `${pctCurrent}%` }} />
+                            </div>
+                            <span className="w-20 text-right font-bold text-white">{formatEuro(inv.currentValue)}</span>
                           </div>
                         </div>
                       </div>
                     );
                   })}
-                  
-                  <div className="flex items-center gap-4 text-[11px] text-slate-400 pt-2 border-t border-slate-800/80">
-                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-slate-600"></span> Prezzo Carico</span>
-                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-emerald-500"></span> Valore Mercato</span>
-                  </div>
                 </div>
               </div>
+            )}
 
-            </div>
+            {(investSubTab === 'all' || investSubTab === 'table') && (
+              <div className="bg-slate-900/60 rounded-3xl border border-slate-800 overflow-hidden space-y-4 p-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Layers3 className="w-5 h-5 text-indigo-400" /> Tabella Analitica Portafoglio
+                  </h3>
+                  <span className="text-xs text-slate-400">{data.investments.length} strumenti registrati</span>
+                </div>
 
-            <div className="bg-slate-900/60 rounded-3xl border border-slate-800 overflow-hidden space-y-4 p-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Layers3 className="w-5 h-5 text-indigo-400" /> Tabella Strumenti in Portafoglio
-                </h3>
-                <span className="text-xs text-slate-400">{data.investments.length} strumenti registrati</span>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[650px]">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                        <th className="py-3 px-3">Strumento</th>
+                        <th className="py-3 px-3">Categoria</th>
+                        <th className="py-3 px-3 text-right">Cap. Investito</th>
+                        <th className="py-3 px-3 text-right">Valore Attuale</th>
+                        <th className="py-3 px-3 text-right">Profitto / Perdita</th>
+                        <th className="py-3 px-3 text-right">ROI %</th>
+                        <th className="py-3 px-3 text-center">Azioni</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-xs">
+                      {data.investments.map(inv => {
+                        const gain = inv.currentValue - inv.invested;
+                        const roi = inv.invested > 0 ? (gain / inv.invested) * 100 : 0;
+                        const isProfit = gain >= 0;
+
+                        return (
+                          <tr key={inv.id} className="hover:bg-slate-900/80 transition">
+                            <td className="py-3.5 px-3 font-semibold text-white">{inv.name}</td>
+                            <td className="py-3.5 px-3">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap">
+                                {inv.category}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-3 text-right text-slate-300 font-medium">{formatEuro(inv.invested)}</td>
+                            <td className="py-3.5 px-3 text-right text-white font-bold">{formatEuro(inv.currentValue)}</td>
+                            <td className={`py-3.5 px-3 text-right font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {isProfit ? '+' : ''}{formatEuro(gain)}
+                            </td>
+                            <td className={`py-3.5 px-3 text-right font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {isProfit ? '+' : ''}{roi.toFixed(2)}%
+                            </td>
+                            <td className="py-3.5 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button 
+                                  onClick={() => handleOpenEditInvestment(inv)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                  title="Modifica Strumento"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteInvestment(inv.id)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                                  title="Elimina Strumento"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[650px]">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                      <th className="py-3 px-3">Strumento</th>
-                      <th className="py-3 px-3">Categoria</th>
-                      <th className="py-3 px-3 text-right">Cap. Investito</th>
-                      <th className="py-3 px-3 text-right">Valore Attuale</th>
-                      <th className="py-3 px-3 text-right">Profitto / Perdita</th>
-                      <th className="py-3 px-3 text-right">ROI %</th>
-                      <th className="py-3 px-3 text-center">Azioni</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-xs">
-                    {data.investments.map(inv => {
-                      const gain = inv.currentValue - inv.invested;
-                      const roi = inv.invested > 0 ? (gain / inv.invested) * 100 : 0;
-                      const isProfit = gain >= 0;
-
-                      return (
-                        <tr key={inv.id} className="hover:bg-slate-900/80 transition">
-                          <td className="py-3.5 px-3 font-semibold text-white">{inv.name}</td>
-                          <td className="py-3.5 px-3">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap">
-                              {inv.category}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-3 text-right text-slate-300 font-medium">{formatEuro(inv.invested)}</td>
-                          <td className="py-3.5 px-3 text-right text-white font-bold">{formatEuro(inv.currentValue)}</td>
-                          <td className={`py-3.5 px-3 text-right font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {isProfit ? '+' : ''}{formatEuro(gain)}
-                          </td>
-                          <td className={`py-3.5 px-3 text-right font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {isProfit ? '+' : ''}{roi.toFixed(2)}%
-                          </td>
-                          <td className="py-3.5 px-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <button 
-                                onClick={() => handleOpenEditInvestment(inv)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-                                title="Modifica Strumento"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteInvestment(inv.id)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
-                                title="Elimina Strumento"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            )}
 
           </div>
         )}
 
-        {/* 4. SCADENZIARIO & UTENZE TAB (CRUD COMPLETO + FOCUS LUCE E GAS) */}
+        {/* 4. SCADENZIARIO & UTENZE TAB */}
         {activeTab === 'bills' && (
           <div className="space-y-6">
             <div className="flex justify-between items-center flex-wrap gap-3">
@@ -838,10 +882,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* FOCUS LUCE E GAS + RIPARTIZIONE CATEGORIE */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              
-              {/* CARD LUCE & GAS */}
               <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-900/30 to-slate-900 border border-amber-500/20 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Utenze Energetiche</span>
@@ -857,7 +898,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* BARRA RIPARTIZIONE GRAFICA UTENZE */}
               <div className="md:col-span-2 p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
                 <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Ripartizione Spese Utenze per Categoria</h3>
                 
@@ -876,10 +916,8 @@ export default function App() {
                   ))}
                 </div>
               </div>
-
             </div>
 
-            {/* LISTA SCADENZE CON PULSANTI MODIFICA / ELIMINA / PAGATO */}
             <div className="space-y-3">
               <h3 className="text-sm font-bold text-white">Elenco Scadenze Registrate</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1076,7 +1114,7 @@ export default function App() {
         })}
       </nav>
 
-      {/* MODALE NUOVO MOVIMENTO */}
+      {/* MODALE NUOVO MOVIMENTO CON SELEZIONE CATEGORIA */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md space-y-4">
@@ -1084,27 +1122,62 @@ export default function App() {
               <h3 className="font-bold text-white text-base">Nuova Transazione</h3>
               <button onClick={() => setShowAddModal(false)}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
+
             <form onSubmit={handleAddTx} className="space-y-3">
-              <input 
-                type="text" placeholder="Titolo movimento" 
-                value={newTx.title} onChange={e => setNewTx({...newTx, title: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500" required 
-              />
-              <input 
-                type="number" step="0.01" placeholder="Importo €" 
-                value={newTx.amount} onChange={e => setNewTx({...newTx, amount: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500" required 
-              />
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Titolo / Descrizione</label>
+                <input 
+                  type="text" placeholder="Es. Spesa Esselunga, Stipendio..." 
+                  value={newTx.title} onChange={e => setNewTx({...newTx, title: e.target.value})}
+                  className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500" required 
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Importo €</label>
+                <input 
+                  type="number" step="0.01" placeholder="0.00" 
+                  value={newTx.amount} onChange={e => setNewTx({...newTx, amount: e.target.value})}
+                  className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500" required 
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
-                <select value={newTx.type} onChange={e => setNewTx({...newTx, type: e.target.value})} className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white">
-                  <option value="expense">Uscita</option>
-                  <option value="income">Entrata</option>
-                </select>
-                <select value={newTx.accountId} onChange={e => setNewTx({...newTx, accountId: e.target.value})} className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white">
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1">Tipo Transazione</label>
+                  <select 
+                    value={newTx.type} onChange={e => setNewTx({...newTx, type: e.target.value})} 
+                    className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="expense">Uscita (Spesa)</option>
+                    <option value="income">Entrata (Incasso)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1">Categoria Spesa</label>
+                  <select 
+                    value={newTx.category} onChange={e => setNewTx({...newTx, category: e.target.value})} 
+                    className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
+                  >
+                    {Object.keys(categoryConfig).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Conto di Addebito / Accredito</label>
+                <select 
+                  value={newTx.accountId} onChange={e => setNewTx({...newTx, accountId: e.target.value})} 
+                  className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
+                >
                   {data.accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </div>
-              <button type="submit" className="w-full py-3 bg-blue-600 rounded-xl font-bold text-xs text-white shadow-lg shadow-blue-600/30">Salva Movimento</button>
+
+              <button type="submit" className="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-xs text-white shadow-lg shadow-blue-600/30">
+                Salva Movimento
+              </button>
             </form>
           </div>
         </div>
