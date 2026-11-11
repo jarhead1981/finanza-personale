@@ -35,7 +35,7 @@ if (isFirebaseConfigured) {
 
 // Categorie con Colori ed Icone personalizzate (Stile Screenshot Reference)
 const CATEGORY_CONFIG = {
-  'Alimentari': { color: '#8E24AA', bg: 'bg-purple-100 text-purple-600', icon: ShoppingBag },
+  'Alimentari': { color: '#8E24AB', bg: 'bg-purple-100 text-purple-600', icon: ShoppingBag },
   'Trasporti': { color: '#E91E63', bg: 'bg-pink-100 text-pink-600', icon: Car },
   'Affitto': { color: '#FB8C00', bg: 'bg-amber-100 text-amber-600', icon: Home },
   'Casa': { color: '#FB8C00', bg: 'bg-amber-100 text-amber-600', icon: Home },
