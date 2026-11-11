@@ -3,9 +3,9 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
-  Wallet, CreditCard, TrendingUp, Calendar, Plus, Shield, Check, 
+  Wallet, CreditCard, TrendingUp, Calendar, Plus, Shield, Check, Clock,
   PieChart, Tag, ArrowUpRight, ArrowDownRight, Car, Home, ShoppingBag, 
-  Utensils, Briefcase, Gift, Zap, X, Eye, EyeOff, LayoutDashboard, LogOut, ArrowDown, ArrowUp
+  Utensils, Briefcase, Gift, Zap, X, Eye, EyeOff, LayoutDashboard, Download, Upload, Layers
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -28,18 +28,19 @@ if (isFirebaseConfigured) {
 
 const initialData = {
   accounts: [
-    { id: '1', name: 'Conto Corrente Principale', type: 'bank', balance: 4250.00, iban: 'IT60X0542811101000000123456' },
-    { id: '2', name: 'Carta Prepagata', type: 'card', balance: 350.50, iban: 'IT99Y0300000000000009876543' },
-    { id: '3', name: 'Fondo Deposito BBVA', type: 'savings', balance: 12000.00, iban: 'IT12A000000000000000111222' },
+    { id: '1', name: 'Conto Corrente Principale', type: 'banca', balance: 4250.00, iban: 'IT60X0542811101000000123456' },
+    { id: '2', name: 'Carta Prepagata', type: 'carta', balance: 350.50, iban: 'IT99Y0300000000000009876543' },
+    { id: '3', name: 'Fondo Deposito BBVA', type: 'risparmio', balance: 12000.00, iban: 'IT12A000000000000000111222' },
   ],
   bills: [
     { id: '1', title: 'Energia Elettrica & Gas', amount: 145.20, dueDate: '2026-11-20', category: 'Utenze', status: 'pending' },
-    { id: '2', title: 'Internet Fibra Optica', amount: 29.90, dueDate: '2026-11-25', category: 'Utenze', status: 'pending' },
+    { id: '2', title: 'Internet Fibra', amount: 29.90, dueDate: '2026-11-25', category: 'Utenze', status: 'pending' },
     { id: '3', title: 'Rata Mutuo Casa', amount: 750.00, dueDate: '2026-12-01', category: 'Casa', status: 'pending' },
   ],
   investments: [
     { id: '1', name: 'Vanguard FTSE All-World (VWCE)', category: 'ETF', invested: 10000.00, currentValue: 11850.00 },
     { id: '2', name: 'iShares Core S&P 500', category: 'ETF', invested: 5000.00, currentValue: 5620.00 },
+    { id: '3', name: 'BTP Valore 2028', category: 'Titoli', invested: 4000.00, currentValue: 4080.00 },
   ],
   transactions: [
     { id: '1', date: '2026-11-10', title: 'Stipendio Accreditato', amount: 2650.00, type: 'income', category: 'Lavoro', accountId: '1' },
@@ -97,9 +98,12 @@ export default function App() {
   };
 
   const totalBankBalance = useMemo(() => data.accounts.reduce((sum, a) => sum + Number(a.balance), 0), [data.accounts]);
-  const totalInvested = useMemo(() => data.investments.reduce((sum, i) => sum + Number(i.currentValue), 0), [data.investments]);
+  const totalInvestedCarico = useMemo(() => data.investments.reduce((sum, i) => sum + Number(i.invested), 0), [data.investments]);
+  const totalInvestedCurrent = useMemo(() => data.investments.reduce((sum, i) => sum + Number(i.currentValue), 0), [data.investments]);
   const pendingBills = useMemo(() => data.bills.filter(b => b.status === 'pending').reduce((sum, b) => sum + Number(b.amount), 0), [data.bills]);
-  const netWorth = totalBankBalance + totalInvested - pendingBills;
+  const netWorth = totalBankBalance + totalInvestedCurrent - pendingBills;
+  const totalGainAbs = totalInvestedCurrent - totalInvestedCarico;
+  const totalROI = totalInvestedCarico > 0 ? (totalGainAbs / totalInvestedCarico) * 100 : 0;
 
   const handleAddTx = (e) => {
     e.preventDefault();
@@ -112,7 +116,12 @@ export default function App() {
     setNewTx({ title: '', amount: '', type: 'expense', category: 'Alimentari', accountId: '1', date: new Date().toISOString().split('T')[0] });
   };
 
-  const formatEuro = (v) => showValues ? `€ ${v.toLocaleString('it-IT', { minimumFractionDigits: 2 })}` : '••••••';
+  const handleToggleBillStatus = (id) => {
+    const updatedBills = data.bills.map(b => b.id === id ? { ...b, status: b.status === 'paid' ? 'pending' : 'paid' } : b);
+    updateData({ ...data, bills: updatedBills });
+  };
+
+  const formatEuro = (v) => showValues ? `€ ${v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '••••••';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row font-sans">
@@ -135,6 +144,8 @@ export default function App() {
             { id: 'accounts', label: 'Conti & Carte', icon: Wallet },
             { id: 'bills', label: 'Scadenziario', icon: Calendar },
             { id: 'investments', label: 'Investimenti', icon: TrendingUp },
+            { id: 'transactions', label: 'Movimenti', icon: Layers },
+            { id: 'backup', label: 'Backup & Cloud', icon: Shield },
           ].map(item => {
             const Icon = item.icon;
             const active = activeTab === item.id;
@@ -162,7 +173,7 @@ export default function App() {
       </aside>
 
       {/* HEADER MOBILE */}
-      <header className="md:hidden flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900">
+      <header className="md:hidden flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900 sticky top-0 z-30">
         <h1 className="font-bold text-base text-white">Finanza Famiglia</h1>
         <button onClick={() => setShowValues(!showValues)} className="text-slate-400">
           {showValues ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -186,23 +197,20 @@ export default function App() {
 
           <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
             <span className="text-xs text-slate-400 font-semibold block mb-1">Portafoglio Investito</span>
-            <span className="text-2xl md:text-3xl font-extrabold text-purple-400">{formatEuro(totalInvested)}</span>
+            <span className="text-2xl md:text-3xl font-extrabold text-purple-400">{formatEuro(totalInvestedCurrent)}</span>
           </div>
         </div>
 
-        {/* DASHBOARD TAB */}
+        {/* 1. DASHBOARD TAB */}
         {activeTab === 'dashboard' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            {/* LISTA TRANSAZIONI */}
             <div className="lg:col-span-2 space-y-4 bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
-              <h2 className="text-sm font-bold text-white flex items-center justify-between">
-                <span>Ultimi Movimenti</span>
-                <button onClick={() => setShowAddModal(true)} className="text-xs text-blue-400 hover:underline">+ Aggiungi</button>
-              </h2>
-              
+              <div className="flex justify-between items-center">
+                <h2 className="text-sm font-bold text-white">Ultimi Movimenti</h2>
+                <button onClick={() => setActiveTab('transactions')} className="text-xs text-blue-400 hover:underline">Vedi Tutti</button>
+              </div>
               <div className="space-y-3">
-                {data.transactions.map(tx => {
+                {data.transactions.slice(0, 5).map(tx => {
                   const cat = categoryConfig[tx.category] || categoryConfig['Altro'];
                   const Icon = cat.icon;
                   const isInc = tx.type === 'income';
@@ -226,7 +234,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* SIDEBAR CONTI RAPIDA */}
             <div className="space-y-4 bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
               <h2 className="text-sm font-bold text-white">Conti & Saldi</h2>
               <div className="space-y-3">
@@ -241,7 +248,154 @@ export default function App() {
                 ))}
               </div>
             </div>
+          </div>
+        )}
 
+        {/* 2. CONTI & CARTE TAB */}
+        {activeTab === 'accounts' && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-bold text-white">Conti Correnti e Carte</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {data.accounts.map(acc => (
+                <div key={acc.id} className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{acc.type}</span>
+                    <Wallet className="w-5 h-5 text-slate-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">{acc.name}</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">{acc.iban || 'Nessun IBAN'}</p>
+                  </div>
+                  <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
+                    <span className="text-xs text-slate-400">Saldo</span>
+                    <span className="text-base font-extrabold text-emerald-400">{formatEuro(acc.balance)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 3. SCADENZIARIO TAB */}
+        {activeTab === 'bills' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-bold text-white">Scadenziario Bollette & Rate</h2>
+              <span className="text-xs font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-xl">
+                Totale da pagare: {formatEuro(pendingBills)}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {data.bills.map(bill => {
+                const isPaid = bill.status === 'paid';
+                return (
+                  <div key={bill.id} className={`p-4 rounded-2xl border flex justify-between items-center transition ${isPaid ? 'bg-slate-950/40 border-slate-800/50 opacity-60' : 'bg-slate-900 border-slate-800'}`}>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">{bill.title}</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">Scadenza: {bill.dueDate} • {bill.category}</p>
+                    </div>
+                    <div className="text-right space-y-1.5">
+                      <span className="text-sm font-bold text-white block">{formatEuro(bill.amount)}</span>
+                      <button 
+                        onClick={() => handleToggleBillStatus(bill.id)}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${isPaid ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}
+                      >
+                        {isPaid ? <Check className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                        {isPaid ? 'Pagato' : 'Segna Pagato'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 4. INVESTIMENTI TAB */}
+        {activeTab === 'investments' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-bold text-white">Portafoglio Investimenti</h2>
+              <span className={`text-xs font-bold px-3 py-1 rounded-xl ${totalGainAbs >= 0 ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/20' : 'text-rose-400 bg-rose-400/10 border border-rose-400/20'}`}>
+                Profitto: {totalGainAbs >= 0 ? '+' : ''}{formatEuro(totalGainAbs)} ({totalROI.toFixed(2)}%)
+              </span>
+            </div>
+            <div className="space-y-3">
+              {data.investments.map(inv => {
+                const gain = inv.currentValue - inv.invested;
+                const roi = inv.invested > 0 ? (gain / inv.invested) * 100 : 0;
+                return (
+                  <div key={inv.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex justify-between items-center">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">{inv.category}</span>
+                      <h4 className="text-sm font-bold text-white mt-1">{inv.name}</h4>
+                      <p className="text-xs text-slate-500">Capitale investito: {formatEuro(inv.invested)}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-bold text-white block">{formatEuro(inv.currentValue)}</span>
+                      <span className={`text-xs font-semibold ${gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {gain >= 0 ? '+' : ''}{formatEuro(gain)} ({roi.toFixed(1)}%)
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 5. MOVIMENTI COMPLETI TAB */}
+        {activeTab === 'transactions' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-bold text-white">Tutti i Movimenti</h2>
+              <button onClick={() => setShowAddModal(true)} className="px-3 py-1.5 rounded-xl bg-emerald-600 text-xs font-bold text-white flex items-center gap-1">
+                <Plus className="w-3.5 h-3.5" /> Aggiungi
+              </button>
+            </div>
+            <div className="space-y-2">
+              {data.transactions.map(tx => {
+                const cat = categoryConfig[tx.category] || categoryConfig['Altro'];
+                const Icon = cat.icon;
+                const isInc = tx.type === 'income';
+                return (
+                  <div key={tx.id} className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${cat.bg} ${cat.text}`}>
+                        <Icon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">{tx.title}</p>
+                        <p className="text-xs text-slate-500">{tx.date} • {tx.category}</p>
+                      </div>
+                    </div>
+                    <span className={`text-sm font-bold ${isInc ? 'text-emerald-400' : 'text-slate-200'}`}>
+                      {isInc ? '+' : '-'}{formatEuro(tx.amount)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 6. BACKUP & CLOUD TAB */}
+        {activeTab === 'backup' && (
+          <div className="space-y-4 max-w-lg mx-auto py-6 text-center">
+            <Shield className="w-12 h-12 text-blue-500 mx-auto" />
+            <h2 className="text-lg font-bold text-white">Sincronizzazione Cloud e Backup</h2>
+            <p className="text-xs text-slate-400">I tuoi dati finanziari sono sincronizzati automaticamente con il database cloud di Firebase e conservati nel dispositivo.</p>
+            <div className="pt-4 flex justify-center gap-3">
+              <button onClick={() => {
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `backup_finanza_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+              }} className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-lg flex items-center gap-2">
+                <Download className="w-4 h-4" /> Esporta Backup JSON
+              </button>
+            </div>
           </div>
         )}
 
@@ -254,6 +408,7 @@ export default function App() {
           { id: 'accounts', label: 'Conti', icon: Wallet },
           { id: 'bills', label: 'Scadenze', icon: Calendar },
           { id: 'investments', label: 'Investimenti', icon: TrendingUp },
+          { id: 'transactions', label: 'Movimenti', icon: Layers },
         ].map(item => {
           const Icon = item.icon;
           return (
